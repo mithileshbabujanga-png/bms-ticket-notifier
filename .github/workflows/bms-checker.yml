@@ -1,25 +1,32 @@
-# BMS Ticket Checker workflow
 name: BMS Ticket Checker
 
 on:
   schedule:
-    # Every 5 minutes (GitHub Actions minimum). Runs 24/7 even when your
-    # laptop is off. Note: GitHub cron can drift by 1-15 min during peak
-    # hours; if you need stricter latency, run a local loop instead.
     - cron: "*/5 * * * *"
   workflow_dispatch:
-    # Lets you trigger a check manually from the Actions tab.
 
 permissions:
-  contents: write   # Required for committing state back to the repo.
+  contents: write
 
 concurrency:
-  group: bms-check
+  group: bms-check-${{ matrix.movie.name }}
   cancel-in-progress: false
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        movie:
+          - name: avengers
+            label: "Avengers"
+            url_var: BMS_URL_AVENGERS
+            state_file: bms_state_avengers.json
+          - name: dune
+            label: "Dune"
+            url_var: BMS_URL_DUNE
+            state_file: bms_state_dune.json
     steps:
       - name: Checkout (with PAT for push)
         uses: actions/checkout@v4
@@ -40,10 +47,12 @@ jobs:
 
       - name: Run BMS checker
         env:
-          BMS_URL: ${{ vars.BMS_URL }}
+          BMS_URL: ${{ vars[matrix.movie.url_var] }}
           BMS_DATES: ${{ vars.BMS_DATES }}
-          BMS_THEATRE: ${{ vars.BMS_THEATRE }}
           BMS_TIME: ${{ vars.BMS_TIME }}
+          BMS_FILTER_GROUPS: ${{ vars.BMS_FILTER_GROUPS }}
+          BMS_MOVIE_LABEL: ${{ matrix.movie.label }}
+          BMS_STATE_FILE: ${{ matrix.movie.state_file }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -56,11 +65,16 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add bms_state.json
+          STATE_FILE="${{ matrix.movie.state_file }}"
+          if [ ! -f "$STATE_FILE" ]; then
+            echo "State file $STATE_FILE not found — checker didn't produce one. Skipping commit."
+            exit 0
+          fi
+          git add "$STATE_FILE"
           if git diff --cached --quiet; then
-            echo "No state changes to commit."
+            echo "No state changes to commit for ${{ matrix.movie.name }}."
           else
-            git commit -m "chore(state): update bms_state.json [skip ci]"
+            git commit -m "chore(state): update $STATE_FILE [skip ci]"
             git push
-            echo "State committed and pushed."
+            echo "State committed and pushed for ${{ matrix.movie.name }}."
           fi
