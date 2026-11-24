@@ -35,6 +35,13 @@ CONFIG = {
     "dates": os.getenv("BMS_DATES", ""),
     "theatre": os.getenv("BMS_THEATRE", ""),
     "time_period": os.getenv("BMS_TIME", ""),
+    "format": os.getenv("BMS_FORMAT", ""),  # e.g. "DOLBY CINEMA,IMAX"
+    # Per-theatre format rules: "theatre_substr:format_substr,theatre_substr:format_substr"
+    # e.g. "Prasads:PCX,AMB:*,Allu:*"
+    # A show passes if it matches ANY group. "*" means any format.
+    # When set, takes precedence over BMS_THEATRE + BMS_FORMAT.
+    "filter_groups": os.getenv("BMS_FILTER_GROUPS", ""),
+    "movie_label": os.getenv("BMS_MOVIE_LABEL", ""),  # optional display label
 }
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -44,7 +51,8 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 RESEND_TO_EMAIL = os.getenv("RESEND_TO_EMAIL", "")
 RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
 
-STATE_FILE = "bms_state.json"
+# Allow per-movie state files (needed for matrix workflow).
+STATE_FILE = os.getenv("BMS_STATE_FILE", "bms_state.json")
 
 # ──────────────────────────────────────────────────────────────────────
 # CONSTANTS
@@ -336,21 +344,64 @@ def parse_shows(data):
 # ──────────────────────────────────────────────────────────────────────
 # FILTERING
 # ──────────────────────────────────────────────────────────────────────
-def filter_shows(shows, theatre_filter, time_periods, date_codes):
+def parse_filter_groups(spec):
+    """Parse 'theatre:format,theatre:format,...' into a list of
+    (theatre_substr, format_substr) tuples. Returns empty list if spec
+    is empty or invalid. '*' as format means any format.
+    """
+    if not spec or not spec.strip():
+        return []
+    groups = []
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" in part:
+            t, f = part.split(":", 1)
+            t = t.strip()
+            f = f.strip()
+            if t:
+                groups.append((t.lower(), f.lower() if f else "*"))
+        else:
+            # No colon — treat as theatre-only filter, any format
+            groups.append((part.lower(), "*"))
+    return groups
+
+def show_matches_group(show, theatre_substr, format_substr):
+    """Returns True if show's venue_name contains theatre_substr AND
+    (format_substr is '*' OR show's screen_attr/categories contain it)."""
+    if theatre_substr not in show.venue_name.lower():
+        return False
+    if format_substr == "*":
+        return True
+    haystack_parts = [show.screen_attr.lower()]
+    for c in show.categories:
+        haystack_parts.append(c.name.lower())
+    haystack = " | ".join(haystack_parts)
+    return format_substr in haystack
+
+def filter_shows(shows, theatre_filter, time_periods, date_codes, format_filter="", filter_groups=None):
+    """Apply filters. If filter_groups is non-empty, it takes precedence
+    over theatre_filter + format_filter (per-theatre format rules).
+    Time and date filters are always applied regardless.
+    """
     result = []
-    kws = [k.strip().lower() for k in theatre_filter.split(",")
-           if k.strip()] if theatre_filter else []
     periods = [p.strip().lower() for p in time_periods.split(",")
                if p.strip()] if time_periods else []
     dates_set = set(d.strip() for d in date_codes.split(",")
                     if d.strip()) if date_codes else set()
+    groups = filter_groups or []
+    # Legacy single-filter fallback (only used when no filter_groups)
+    kws = [k.strip().lower() for k in theatre_filter.split(",")
+           if k.strip()] if theatre_filter else []
+    fmts = [f.strip().lower() for f in format_filter.split(",")
+            if f.strip()] if format_filter else []
+
     for s in shows:
-        if kws:
-            name_lower = s.venue_name.lower()
-            if not any(k in name_lower for k in kws):
-                continue
+        # Date filter (always applies)
         if dates_set and s.date_code and s.date_code not in dates_set:
             continue
+        # Time period filter (always applies)
         if periods:
             try:
                 tc = int(s.time_code)
@@ -365,6 +416,24 @@ def filter_shows(shows, theatre_filter, time_periods, date_codes):
                         break
             if not matched:
                 continue
+        # Theatre + format filter — two modes
+        if groups:
+            # Per-theatre format rules: must match ANY group
+            if not any(show_matches_group(s, t, f) for t, f in groups):
+                continue
+        else:
+            # Legacy AND-logic: theatre substring OR (if no theatre set, any), then format substring
+            if kws:
+                name_lower = s.venue_name.lower()
+                if not any(k in name_lower for k in kws):
+                    continue
+            if fmts:
+                haystack_parts = [s.screen_attr.lower()]
+                for c in s.categories:
+                    haystack_parts.append(c.name.lower())
+                haystack = " | ".join(haystack_parts)
+                if not any(f in haystack for f in fmts):
+                    continue
         result.append(s)
     return result
 
@@ -384,7 +453,9 @@ def save_state(state):
 
 def build_state(shows, dates):
     show_state = {}
+    venue_state = {}  # Per-venue aggregate, used for "theatre unblocked" alerts
     for s in shows:
+        # Show-level state (existing)
         for c in s.categories:
             key = f"{s.venue_code}|{s.session_id}|{s.date_code}|{c.name}"
             show_state[key] = {
@@ -395,11 +466,23 @@ def build_state(shows, dates):
                 "price": c.price,
                 "status": c.status,
             }
+        # Venue-level aggregate (new)
+        if s.venue_code not in venue_state:
+            venue_state[s.venue_code] = {
+                "name": s.venue_name,
+                "show_count": 0,
+                "has_available": False,  # True if at least one cat is not SOLD OUT
+            }
+        venue_state[s.venue_code]["show_count"] += 1
+        for c in s.categories:
+            if c.status != "0":
+                venue_state[s.venue_code]["has_available"] = True
     date_state = {d.date_code: d.status for d in dates}
-    return {"shows": show_state, "dates": date_state}
+    return {"shows": show_state, "dates": date_state, "venues": venue_state}
 
 def detect_changes(old_state, new_state):
     changes = []
+    # ── Date-level changes ──
     old_dates = old_state.get("dates", {})
     new_dates = new_state.get("dates", {})
     for dc, status in new_dates.items():
@@ -410,6 +493,30 @@ def detect_changes(old_state, new_state):
         elif old_status is None and status in ("BOOKABLE", "AVAILABLE"):
             # Brand-new date that wasn't in the previous snapshot at all
             changes.append(f"📅 NEW DATE OPENED: {dc}")
+
+    # ── Venue-level changes (theatre unblocked) ──
+    # Only detect if old_state already has venue tracking (avoids false
+    # alerts on the first run after deploying this update).
+    if "venues" in old_state:
+        old_venues = old_state.get("venues", {})
+        new_venues = new_state.get("venues", {})
+        for vcode, vinfo in new_venues.items():
+            old_v = old_venues.get(vcode)
+            if old_v is None:
+                # Venue wasn't in previous snapshot at all
+                if vinfo["has_available"]:
+                    changes.append(
+                        f"🔓 THEATRE UNBLOCKED: {vinfo['name']} — "
+                        f"now selling tickets ({vinfo['show_count']} show(s))"
+                    )
+            elif not old_v["has_available"] and vinfo["has_available"]:
+                # Venue had shows but all SOLD OUT, now has available
+                changes.append(
+                    f"🔓 THEATRE UNBLOCKED: {vinfo['name']} — "
+                    f"tickets back in stock"
+                )
+
+    # ── Show-level changes ──
     old_shows = old_state.get("shows", {})
     new_shows = new_state.get("shows", {})
     for key in set(new_shows) - set(old_shows):
@@ -557,22 +664,70 @@ def send_alert(movie_info, changes, shows, is_baseline=False):
     deep_link = booking_deep_link(CONFIG["url"])
 
     if is_baseline:
+        # Build active-filters summary so you can verify setup at a glance
+        filter_lines = []
+        # Show movie label if set (helps distinguish Avengers vs Dune in matrix setup)
+        label = CONFIG.get("movie_label", "").strip()
+        if label:
+            filter_lines.append(f"🏷️ Movie label: `{label}`")
+        if CONFIG["filter_groups"]:
+            filter_lines.append(f"🎯 Filter groups: `{CONFIG['filter_groups']}`")
+        else:
+            if CONFIG["theatre"]:
+                filter_lines.append(f"🎭 Theatre filter: `{CONFIG['theatre']}`")
+            if CONFIG["format"]:
+                filter_lines.append(f"🎬 Format filter: `{CONFIG['format']}`")
+        if CONFIG["time_period"]:
+            filter_lines.append(f"🕒 Time filter: `{CONFIG['time_period']}`")
+        if CONFIG["dates"]:
+            filter_lines.append(f"📅 Date filter: `{CONFIG['dates']}`")
+        filter_block = ("\n".join(filter_lines) + "\n\n") if filter_lines else "(monitoring all theatres / formats / times)\n\n"
         tg_text = (
             f"✅ *BMS Notifier is LIVE*\n\n"
             f"🎬 Monitoring: *{movie_name}*\n"
             f"📍 URL: {CONFIG['url']}\n"
             f"🕒 Baseline stored at: {now_str}\n\n"
+            f"*Active filters:*\n{filter_block}"
             f"You'll get a push the moment booking opens, "
-            f"a new show is added, or a sold-out show comes back.\n\n"
+            f"a new show is added, a sold-out show comes back, "
+            f"or a theatre unblocks tickets.\n\n"
             f"👉 Current booking page: {deep_link}"
         )
         send_telegram(tg_text)
         return
 
-    # Normal alert with changes
-    change_lines = "\n".join(f"• {c}" for c in changes)
+    # Normal alert with changes — sort so THEATRE UNBLOCKED and NEW DATE
+    # appear first (most urgent for "ASAP book it"), then NEW SHOW, then
+    # BACK IN STOCK.
+    priority_order = [
+        "🔓 THEATRE UNBLOCKED",
+        "📅 NEW DATE OPENED",
+        "🆕 NEW SHOW",
+        "🟢 BACK IN STOCK",
+        "🟠 BACK IN STOCK",
+        "🟡 BACK IN STOCK",
+    ]
+    def change_priority(c):
+        for i, prefix in enumerate(priority_order):
+            if c.startswith(prefix):
+                return i
+        return len(priority_order)
+    sorted_changes = sorted(changes, key=change_priority)
+    change_lines = "\n".join(f"• {c}" for c in sorted_changes)
+
+    # Detect if this is a high-urgency alert (theatre unblocked or new date)
+    high_urgency = any(
+        c.startswith("🔓 THEATRE UNBLOCKED") or c.startswith("📅 NEW DATE OPENED")
+        for c in changes
+    )
+    urgency_banner = "🚨 *BOOK NOW!*" if high_urgency else "⚡"
+
+    # Add movie label prefix if set (helps distinguish Avengers vs Dune)
+    label = CONFIG.get("movie_label", "").strip()
+    label_prefix = f"[{label}] " if label else ""
+
     tg_text = (
-        f"🎬 *{movie_name}* — {len(changes)} change(s) detected!\n\n"
+        f"{urgency_banner} {label_prefix}*{movie_name}* — {len(changes)} change(s)!\n\n"
         f"⚡ *Changes:*\n{change_lines}\n\n"
         f"👉 *TAP TO BOOK NOW:*\n{deep_link}\n\n"
         f"🕒 Checked: {now_str}"
@@ -664,12 +819,17 @@ def main():
 
     print(f"  Movie: {movie_info['name']}  {movie_info['language']}")
 
+    filter_groups = parse_filter_groups(CONFIG["filter_groups"])
     filtered = filter_shows(
         all_shows,
         CONFIG["theatre"],
         CONFIG["time_period"],
         CONFIG["dates"],
+        CONFIG["format"],
+        filter_groups=filter_groups,
     )
+    if filter_groups:
+        print(f"  Filter groups active: {filter_groups}")
     print(f"  {len(filtered)} showtime(s) after filters")
 
     new_state = build_state(filtered, all_dates)
