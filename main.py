@@ -142,23 +142,89 @@ API_URL = (
     "showtimes-by-event/primary-dynamic"
 )
 
+# A pool of recent Chrome User-Agents. Rotating helps avoid trivial
+# fingerprint blocks. All are realistic desktop Chrome on common OSes.
+USER_AGENTS = [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/130.0.0.0 Safari/537.36",
+]
+
+def _pick_user_agent():
+    """Pick a deterministic-ish UA per run (based on minute of day)."""
+    idx = datetime.now().minute % len(USER_AGENTS)
+    return USER_AGENTS[idx]
+
 def fetch_bms(event_code, date_code, region_code, region_slug,
               lat, lon, geohash):
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/145.0.0.0 Safari/537.36"
+    """Two-step fetch:
+    1. GET the movie page HTML to warm up session cookies (BMS sets
+       several anti-bot cookies on first page load).
+    2. Call the showtimes API with the same session + cookies.
+    Also sends more complete browser headers (sec-fetch-*, etc.).
+    """
+    ua = _pick_user_agent()
+    page_url = (
+        f"https://in.bookmyshow.com/movies/"
+        f"{region_slug}/buytickets/{event_code}/"
+    )
+
+    session = requests.Session()
+
+    # Step 1: warm-up GET to acquire cookies
+    warmup_headers = {
+        "User-Agent": ua,
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,"
+            "image/avif,image/webp,image/apng,*/*;q=0.8,"
+            "application/signed-exchange;v=b3;q=0.7"
         ),
-        "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
-        "Referer": (
-            f"https://in.bookmyshow.com/movies/"
-            f"{region_slug}/buytickets/{event_code}/"
-        ),
-        "sec-ch-ua": '"Chromium";v="145", "Not:A-Brand";v="99"',
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "sec-ch-ua": '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"macOS"',
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+        "sec-fetch-user": "?1",
+        "upgrade-insecure-requests": "1",
+    }
+    try:
+        warmup = session.get(page_url, headers=warmup_headers, timeout=15)
+        print(f"  warmup: HTTP {warmup.status_code} "
+              f"({len(session.cookies)} cookies)")
+    except requests.RequestException as e:
+        print(f"  warmup failed: {e}")
+        # Continue anyway — sometimes API works without warmup
+
+    # Step 2: API call with warmed session
+    api_headers = {
+        "User-Agent": ua,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Referer": page_url,
+        "sec-ch-ua": '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
         "x-app-code": "WEB",
         "x-region-code": region_code,
         "x-region-slug": region_slug,
@@ -167,6 +233,7 @@ def fetch_bms(event_code, date_code, region_code, region_slug,
         "x-longitude": lon,
         "x-location-selection": "manual",
         "x-lsid": "",
+        "origin": "https://in.bookmyshow.com",
     }
     params = {
         "eventCode": event_code,
@@ -178,10 +245,12 @@ def fetch_bms(event_code, date_code, region_code, region_slug,
         "lat": lat, "lon": lon,
     }
     try:
-        resp = requests.get(API_URL, headers=headers, params=params, timeout=15)
+        resp = session.get(API_URL, headers=api_headers,
+                           params=params, timeout=15)
         if resp.status_code == 200:
             return resp.json()
-        print(f"  HTTP {resp.status_code}")
+        body_preview = resp.text[:200] if resp.text else "(empty)"
+        print(f"  HTTP {resp.status_code}: {body_preview}")
     except requests.RequestException as e:
         print(f"  Request failed: {e}")
     return None
