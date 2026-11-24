@@ -2,43 +2,64 @@ name: BMS Ticket Checker
 
 on:
   schedule:
-    # Every 30 minutes
-    - cron: '*/30 * * * *'
-  workflow_dispatch:  # Manual trigger button
+    # Every 5 minutes (GitHub Actions minimum). Runs 24/7 even when your
+    # laptop is off. Note: GitHub cron can drift by 1-15 min during peak
+    # hours; if you need stricter latency, run a local loop instead.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    # Lets you trigger a check manually from the Actions tab.
+
+permissions:
+  contents: write   # Required for committing state back to the repo.
+
+concurrency:
+  group: bms-check
+  cancel-in-progress: false
 
 jobs:
-  check-tickets:
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
+      - name: Checkout (with PAT for push)
+        uses: actions/checkout@v4
         with:
-          python-version: '3.14'
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen || uv sync
 
-      - name: Run checker
+      - name: Run BMS checker
         env:
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          RESEND_TO_EMAIL: ${{ secrets.RESEND_TO_EMAIL }}
-          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
           BMS_URL: ${{ vars.BMS_URL }}
           BMS_DATES: ${{ vars.BMS_DATES }}
           BMS_THEATRE: ${{ vars.BMS_THEATRE }}
           BMS_TIME: ${{ vars.BMS_TIME }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          RESEND_TO_EMAIL: ${{ secrets.RESEND_TO_EMAIL }}
         run: uv run main.py
 
-      - name: Commit updated state
+      - name: Commit state back
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add bms_state.json
-          git diff --cached --quiet || (git commit -m "chore: update bms_state.json [skip ci]" && git push)
+          if git diff --cached --quiet; then
+            echo "No state changes to commit."
+          else
+            git commit -m "chore(state): update bms_state.json [skip ci]"
+            git push
+            echo "State committed and pushed."
+          fi
