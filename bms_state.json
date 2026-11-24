@@ -614,7 +614,7 @@
       "date": "20261217",
       "cat": "3D PRIME",
       "price": "345.00",
-      "status": "2"
+      "status": "1"
     },
     "MMAH|64143|20261217|3D RECLINER": {
       "venue": "MovieMax: AMR, ECIL Secunderabad",
@@ -664,14 +664,6 @@
       "price": "418.00",
       "status": "0"
     },
-    "ILKS|14101|20261217|PRIME ROWS": {
-      "venue": "PVR Lakeshore PXL 4K Laser ATMOS DTS-X Y Junction",
-      "time": "08:25 AM",
-      "date": "20261217",
-      "cat": "PRIME ROWS",
-      "price": "359.00",
-      "status": "0"
-    },
     "ILKS|14101|20261217|CLASSIC ROWS": {
       "venue": "PVR Lakeshore PXL 4K Laser ATMOS DTS-X Y Junction",
       "time": "08:25 AM",
@@ -680,12 +672,12 @@
       "price": "359.00",
       "status": "0"
     },
-    "ILKS|14102|20261217|LOUNGER ROWS": {
+    "ILKS|14101|20261217|PRIME ROWS": {
       "venue": "PVR Lakeshore PXL 4K Laser ATMOS DTS-X Y Junction",
-      "time": "12:00 PM",
+      "time": "08:25 AM",
       "date": "20261217",
-      "cat": "LOUNGER ROWS",
-      "price": "418.00",
+      "cat": "PRIME ROWS",
+      "price": "359.00",
       "status": "0"
     },
     "ILKS|14102|20261217|RECLINER ROWS": {
@@ -696,12 +688,12 @@
       "price": "418.00",
       "status": "0"
     },
-    "ILKS|14102|20261217|PRIME ROWS": {
+    "ILKS|14102|20261217|LOUNGER ROWS": {
       "venue": "PVR Lakeshore PXL 4K Laser ATMOS DTS-X Y Junction",
       "time": "12:00 PM",
       "date": "20261217",
-      "cat": "PRIME ROWS",
-      "price": "359.00",
+      "cat": "LOUNGER ROWS",
+      "price": "418.00",
       "status": "0"
     },
     "ILKS|14102|20261217|CLASSIC ROWS": {
@@ -709,6 +701,14 @@
       "time": "12:00 PM",
       "date": "20261217",
       "cat": "CLASSIC ROWS",
+      "price": "359.00",
+      "status": "0"
+    },
+    "ILKS|14102|20261217|PRIME ROWS": {
+      "venue": "PVR Lakeshore PXL 4K Laser ATMOS DTS-X Y Junction",
+      "time": "12:00 PM",
+      "date": "20261217",
+      "cat": "PRIME ROWS",
       "price": "359.00",
       "status": "0"
     },
@@ -776,14 +776,6 @@
       "price": "359.00",
       "status": "0"
     },
-    "ILKS|14107|20261217|RECLINER ROWS": {
-      "venue": "PVR Lakeshore PXL 4K Laser ATMOS DTS-X Y Junction",
-      "time": "10:45 PM",
-      "date": "20261217",
-      "cat": "RECLINER ROWS",
-      "price": "418.00",
-      "status": "0"
-    },
     "ILKS|14107|20261217|LOUNGER ROWS": {
       "venue": "PVR Lakeshore PXL 4K Laser ATMOS DTS-X Y Junction",
       "time": "10:45 PM",
@@ -792,12 +784,12 @@
       "price": "418.00",
       "status": "0"
     },
-    "ILKS|14107|20261217|CLASSIC ROWS": {
+    "ILKS|14107|20261217|RECLINER ROWS": {
       "venue": "PVR Lakeshore PXL 4K Laser ATMOS DTS-X Y Junction",
       "time": "10:45 PM",
       "date": "20261217",
-      "cat": "CLASSIC ROWS",
-      "price": "359.00",
+      "cat": "RECLINER ROWS",
+      "price": "418.00",
       "status": "0"
     },
     "ILKS|14107|20261217|PRIME ROWS": {
@@ -805,6 +797,14 @@
       "time": "10:45 PM",
       "date": "20261217",
       "cat": "PRIME ROWS",
+      "price": "359.00",
+      "status": "0"
+    },
+    "ILKS|14107|20261217|CLASSIC ROWS": {
+      "venue": "PVR Lakeshore PXL 4K Laser ATMOS DTS-X Y Junction",
+      "time": "10:45 PM",
+      "date": "20261217",
+      "cat": "CLASSIC ROWS",
       "price": "359.00",
       "status": "0"
     },
