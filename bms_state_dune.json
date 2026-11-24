@@ -1,0 +1,36 @@
+{
+  "shows": {
+    "PRHN|259279|20261216|GOLD": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "05:45 PM",
+      "date": "20261216",
+      "cat": "GOLD",
+      "price": "295.00",
+      "status": "1"
+    },
+    "PRHN|259280|20261216|GOLD": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "08:50 PM",
+      "date": "20261216",
+      "cat": "GOLD",
+      "price": "295.00",
+      "status": "1"
+    }
+  },
+  "dates": {
+    "20261216": "BOOKABLE",
+    "20261217": "AVAILABLE",
+    "20261218": "AVAILABLE",
+    "20261219": "AVAILABLE",
+    "20261220": "AVAILABLE",
+    "20261221": "NOT_OPEN",
+    "20261222": "NOT_OPEN"
+  },
+  "venues": {
+    "PRHN": {
+      "name": "Prasads Multiplex: Hyderabad",
+      "show_count": 2,
+      "has_available": true
+    }
+  }
+}
