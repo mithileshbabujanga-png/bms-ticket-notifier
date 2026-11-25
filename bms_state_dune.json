@@ -7,14 +7,6 @@
       "cat": "GOLD",
       "price": "295.00",
       "status": "1"
-    },
-    "PRHN|259280|20261216|GOLD": {
-      "venue": "Prasads Multiplex: Hyderabad",
-      "time": "08:50 PM",
-      "date": "20261216",
-      "cat": "GOLD",
-      "price": "295.00",
-      "status": "1"
     }
   },
   "dates": {
@@ -29,7 +21,7 @@
   "venues": {
     "PRHN": {
       "name": "Prasads Multiplex: Hyderabad",
-      "show_count": 2,
+      "show_count": 1,
       "has_available": true
     }
   }
