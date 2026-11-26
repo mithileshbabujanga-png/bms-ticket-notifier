@@ -6,7 +6,7 @@
       "date": "20261216",
       "cat": "GOLD",
       "price": "295.00",
-      "status": "1"
+      "status": "0"
     }
   },
   "dates": {
@@ -22,7 +22,7 @@
     "PRHN": {
       "name": "Prasads Multiplex: Hyderabad",
       "show_count": 1,
-      "has_available": true
+      "has_available": false
     }
   }
 }
